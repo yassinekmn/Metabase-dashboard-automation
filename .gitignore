@@ -1,0 +1,15 @@
+# Sensitive files
+.env
+.env.*
+
+# Output directories
+dashboard_exports/
+
+# Python/Venv files
+__pycache__/
+*.py[cod]
+venv/
+*.venv/
+
+# System files (optional)
+.DS_Store
