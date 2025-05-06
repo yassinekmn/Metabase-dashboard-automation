@@ -27,6 +27,7 @@ import time
 from datetime import datetime
 from openpyxl.styles import PatternFill
 from dotenv import load_dotenv
+import locale
 
 # Define colors
 yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
@@ -46,7 +47,7 @@ class MetabaseAgent:
 
         # Define normal and large viewport sizes
         self.normal_viewport = {'width': 1280, 'height': 800}  # Normal viewport size
-        self.large_viewport = {'width': 1920, 'height': 10000}  # Larger viewport for table extraction
+        self.large_viewport = {'width': 50000, 'height': 10000}  # Larger viewport for table extraction
 
     async def initialize(self):
         """Initialize Playwright"""
@@ -127,190 +128,213 @@ class MetabaseAgent:
 
 
     async def extract_table_data_to_xlsx(self, card, output_dir, card_id):
-      """Extract table data from a table card and save it to an Excel file with clickable first column."""
-      try:
-          # Before extracting data, set the larger viewport
-          await self.page.set_viewport_size(self.large_viewport)
+        """Extract table data from a table card and save it to an Excel file with clickable first column."""
+        try:
+            # Before extracting data, set the larger viewport
+            await self.page.set_viewport_size(self.large_viewport)
 
-          # Try to extract the card title
-          card_title = await self.page.evaluate('''(card) => {
-              const titleEl = card.querySelector('[data-testid="legend-caption-title"]');
-              if (titleEl) return titleEl.textContent.trim();
+            # Try to extract the card title
+            card_title = await self.page.evaluate('''(card) => {
+                const titleEl = card.querySelector('[data-testid="legend-caption-title"]');
+                if (titleEl) return titleEl.textContent.trim();
 
-              const altTitleEl = card.querySelector('.Visualization-title') ||
-                                  card.querySelector('.CardVisualization-title') ||
-                                  card.querySelector('h3') ||
-                                  card.querySelector('.dashcard-title');
-              return altTitleEl ? altTitleEl.textContent.trim() : null;
-          }''', card)
+                const altTitleEl = card.querySelector('.Visualization-title') ||
+                                    card.querySelector('.CardVisualization-title') ||
+                                    card.querySelector('h3') ||
+                                    card.querySelector('.dashcard-title');
+                return altTitleEl ? altTitleEl.textContent.trim() : null;
+            }''', card)
+            await self.page.wait_for_timeout(3000)
 
-          # Fallback title if not found
-          title = card_title if card_title else f"table_{card_id}"
-          safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
+            # Fallback title if not found
+            title = card_title if card_title else f"table_{card_id}"
+            safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
 
-          all_rows = []  # List to store all the extracted rows
-          headers = []  # To store table headers
+            all_rows = []  # List to store all the extracted rows
+            headers = []  # To store table headers
 
-          total_pages = 0  # Total number of pages processed
-          current_page = 1  # Start with the first page
+            total_pages = 0  # Total number of pages processed
+            current_page = 1  # Start with the first page
 
-          # Start paginating through the table
-          while True:
-              print(f"--- Processing page {current_page} ---")
-              table_data = await self.page.evaluate('''(card) => {
-                  let table = card.querySelector('table');
-                  let headers = [];
-                  let rows = [];
+            # Start paginating through the table
+            while True:
+                print(f"--- Processing page {current_page} ---")
+                table_data = await self.page.evaluate('''(card) => {
+                    let table = card.querySelector('table');
+                    let headers = [];
+                    let rows = [];
 
-                  if (!table) {
-                      return null;
-                  }
+                    if (!table) {
+                        return null;
+                    }
 
-                  headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent.trim());
-                  const rowsEls = table.querySelectorAll('tr');
+                    headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent.trim());
+                    const rowsEls = table.querySelectorAll('tr');
 
-                  rows = Array.from(rowsEls).map(tr => {
-                      const cells = tr.querySelectorAll('td');
-                      // Get both the text content and href attributes for the first cell
-                      const rowData = Array.from(cells).map((cell, idx) => {
-                          // For the first column, check if there's an anchor tag with href
-                          if (idx === 0) {
-                              const anchor = cell.querySelector('a');
-                              if (anchor && anchor.href) {
-                                  return {
-                                      text: cell.textContent.trim(),
-                                      href: anchor.href
-                                  };
-                              }
-                          }
-                          return cell.textContent.trim();
-                      });
-                      return rowData;
-                  }).filter(row => row.length > 0);
+                    rows = Array.from(rowsEls).map(tr => {
+                        const cells = tr.querySelectorAll('td');
+                        // Get both the text content and href attributes for the first cell
+                        const rowData = Array.from(cells).map((cell, idx) => {
+                            // For the first column, check if there's an anchor tag with href
+                            if (idx === 0) {
+                                const anchor = cell.querySelector('a');
+                                if (anchor && anchor.href) {
+                                    return {
+                                        text: cell.textContent.trim(),
+                                        href: anchor.href
+                                    };
+                                }
+                            }
+                            return cell.textContent.trim();
+                        });
+                        return rowData;
+                    }).filter(row => row.length > 0);
 
-                  return { headers, rows };
-              }''', card)
+                    return { headers, rows };
+                }''', card)
 
-              if table_data:
-                  if not headers:
-                      headers = table_data['headers']
+                if table_data:
+                    if not headers:
+                        headers = table_data['headers']
 
-                  all_rows.extend(table_data['rows'])
-                  current_page_rows = len(table_data['rows'])
-                  print(f"Table on page {current_page} has {current_page_rows} rows")
+                    all_rows.extend(table_data['rows'])
+                    current_page_rows = len(table_data['rows'])
+                    print(f"Table on page {current_page} has {current_page_rows} rows")
 
-              current_row_count = len(all_rows)
-              print(f"Total rows loaded so far: {current_row_count}")
+                current_row_count = len(all_rows)
+                print(f"Total rows loaded so far: {current_row_count}")
 
-              next_button_disabled = await self.page.evaluate('''() => {
-                  const nextButton = document.querySelector('[aria-label="Page suivante"][disabled]');
-                  return nextButton !== null;
-              }''')
+                # UPDATED PAGINATION DETECTION LOGIC
+                has_more_pages = await self.page.evaluate('''() => {
+                    // Check if pagination footer exists
+                    const tableFooter = document.querySelector('[data-testid="TableFooter"]');
+                    if (!tableFooter) return false;
+                    
+                    // Check if next button exists and is NOT disabled
+                    const nextButton = document.querySelector('[aria-label="Page suivante"]');
+                    return nextButton && !nextButton.hasAttribute('disabled');
+                }''')
 
-              if next_button_disabled:
-                  print("No more pages, ending extraction.")
-                  total_pages = current_page
-                  break
+                if not has_more_pages:
+                    print("No more pages, ending extraction.")
+                    total_pages = current_page
+                    break
 
-              next_button = await self.page.query_selector('[aria-label="Page suivante"]:not([disabled])')
-              if next_button:
-                  await next_button.click()
-                  print(f"Clicked next page, waiting for table to update...")
-                  await self.page.wait_for_timeout(3000)  # Wait for new data to load
-                  current_page += 1
-              else:
-                  print("Next button not found or disabled. Ending extraction.")
-                  break
+                next_button = await self.page.query_selector('[aria-label="Page suivante"]:not([disabled])')
+                if next_button:
+                    await next_button.click()
+                    print(f"Clicked next page, waiting for table to update...")
+                    await self.page.wait_for_timeout(10000)  # Wait for new data to load
+                    current_page += 1
+                else:
+                    print("Next button not found or disabled. Ending extraction.")
+                    break
 
-          print(f"Total pages processed: {total_pages}")
-          print(f"Total rows extracted: {len(all_rows)}")
+            print(f"Total pages processed: {total_pages}")
+            print(f"Total rows extracted: {len(all_rows)}")
 
-          if headers and all_rows:
-              # Create a pandas DataFrame for easier data handling
-              # But now we need to separate the text and hyperlinks first
-              processed_rows = []
-              hyperlinks = []
+            if headers and all_rows:
+                # Create a pandas DataFrame for easier data handling
+                # But now we need to separate the text and hyperlinks first
+                processed_rows = []
+                hyperlinks = []
 
-              for row in all_rows:
-                  processed_row = []
-                  hyperlink = None
+                for row in all_rows:
+                    processed_row = []
+                    hyperlink = None
 
-                  for idx, cell in enumerate(row):
-                      if idx == 0 and isinstance(cell, dict) and 'text' in cell and 'href' in cell:
-                          processed_row.append(cell['text'])
-                          hyperlink = cell['href']
-                      else:
-                          processed_row.append(cell)
+                    for idx, cell in enumerate(row):
+                        if idx == 0 and isinstance(cell, dict) and 'text' in cell and 'href' in cell:
+                            processed_row.append(cell['text'])
+                            hyperlink = cell['href']
+                        else:
+                            processed_row.append(cell)
 
-                  processed_rows.append(processed_row)
-                  hyperlinks.append(hyperlink)
+                    processed_rows.append(processed_row)
+                    hyperlinks.append(hyperlink)
 
-              df = pd.DataFrame(processed_rows, columns=headers)
-              xlsx_filename = f"{safe_title}.xlsx"
-              xlsx_file_path = os.path.join(output_dir, xlsx_filename)
+                df = pd.DataFrame(processed_rows, columns=headers)
+                xlsx_filename = f"{safe_title}.xlsx"
+                xlsx_file_path = os.path.join(output_dir, xlsx_filename)
 
-              workbook = openpyxl.Workbook()
-              worksheet = workbook.active
+                workbook = openpyxl.Workbook()
+                worksheet = workbook.active
 
-              # Add headers
-              for col_idx, header in enumerate(headers, 1):
-                  worksheet.cell(row=1, column=col_idx, value=header)
+                # Add headers
+                for col_idx, header in enumerate(headers, 1):
+                    worksheet.cell(row=1, column=col_idx, value=header)
+                    # Make headers bold
+                    worksheet.cell(row=1, column=col_idx).font = openpyxl.styles.Font(bold=True)
 
-              # Add data rows with hyperlinks in the first column
-              for row_idx, (row, hyperlink) in enumerate(zip(processed_rows, hyperlinks), 2):
-                  for col_idx, cell in enumerate(row, 1):
-                      cell_obj = worksheet.cell(row=row_idx, column=col_idx, value=cell)
+                # Add data rows with hyperlinks in the first column
+                for row_idx, (row, hyperlink) in enumerate(zip(processed_rows, hyperlinks), 2):
+                    for col_idx, cell in enumerate(row, 1):
+                        cell_obj = worksheet.cell(row=row_idx, column=col_idx, value=cell)
 
-                      # Add hyperlink to the first column if available
-                      if col_idx == 1 and hyperlink:
-                          cell_obj.hyperlink = hyperlink
-                          cell_obj.style = "Hyperlink"  # Apply built-in hyperlink style
+                        # Add hyperlink to the first column if available
+                        if col_idx == 1 and hyperlink:
+                            cell_obj.hyperlink = hyperlink
+                            cell_obj.style = "Hyperlink"  # Apply built-in hyperlink style
 
-              # Color the "Nature Intervention" column (index is based on headers)
-              if "Nature Intervention" in headers:
-                  nature_col_idx = headers.index("Nature Intervention") + 1
-                  for row_idx in range(2, len(processed_rows) + 2):
-                      nature_value = worksheet.cell(row=row_idx, column=nature_col_idx).value
-                      if nature_value == "Curative":
-                          worksheet.cell(row=row_idx, column=nature_col_idx).fill = yellow_fill
-                      elif nature_value == "Préventive":
-                          worksheet.cell(row=row_idx, column=nature_col_idx).fill = green_fill
+                # Color the "Nature Intervention" column (index is based on headers)
+                if "Nature Intervention" in headers:
+                    nature_col_idx = headers.index("Nature Intervention") + 1
+                    for row_idx in range(2, len(processed_rows) + 2):
+                        nature_value = worksheet.cell(row=row_idx, column=nature_col_idx).value
+                        if nature_value == "Curative":
+                            worksheet.cell(row=row_idx, column=nature_col_idx).fill = yellow_fill
+                        elif nature_value == "Préventive":
+                            worksheet.cell(row=row_idx, column=nature_col_idx).fill = green_fill
 
-              # Color the "Date Échéance" column (index is based on headers)
-              if "Echéance" in headers:
-                  date_echeance_col_idx = headers.index("Echéance") + 1
-                  for row_idx in range(2, len(processed_rows) + 2):
-                      date_value = worksheet.cell(row=row_idx, column=date_echeance_col_idx).value
-                      if isinstance(date_value, str):
-                          try:
-                              date_value = datetime.strptime(date_value, "%d/%m/%Y")
-                          except ValueError:
-                              continue  # Skip if the date is in an invalid format
+                # Color the "Date Échéance" column (index is based on headers)
+                if "Echéance" in headers:
+                    date_echeance_col_idx = headers.index("Echéance") + 1
+                    for row_idx in range(2, len(processed_rows) + 2):
+                        date_value = worksheet.cell(row=row_idx, column=date_echeance_col_idx).value
+                        if isinstance(date_value, str):
+                            try:
+                                date_value = datetime.strptime(date_value, "%d/%m/%Y")
+                            except ValueError:
+                                continue  # Skip if the date is in an invalid format
 
-                      if date_value:
-                          today = datetime.today()
-                          if date_value.date() == today.date():  # It's today
-                              worksheet.cell(row=row_idx, column=date_echeance_col_idx).fill = yellow_green_fill
-                          elif date_value < today:  # It's in the past
-                              worksheet.cell(row=row_idx, column=date_echeance_col_idx).fill = red_fill
-                          elif date_value > today:  # It's in the future
-                              worksheet.cell(row=row_idx, column=date_echeance_col_idx).fill = green_fill
+                        if date_value:
+                            today = datetime.today()
+                            if date_value.date() == today.date():  # It's today
+                                worksheet.cell(row=row_idx, column=date_echeance_col_idx).fill = yellow_green_fill
+                            elif date_value < today:  # It's in the past
+                                worksheet.cell(row=row_idx, column=date_echeance_col_idx).fill = red_fill
+                            elif date_value > today:  # It's in the future
+                                worksheet.cell(row=row_idx, column=date_echeance_col_idx).fill = green_fill
+                
+                # Auto-adjust column widths based on content
+                for col_idx, header in enumerate(headers, 1):
+                    max_length = len(str(header)) + 2  # Add some padding
+                    
+                    # Check content length in each row for this column
+                    for row_idx in range(2, len(processed_rows) + 2):
+                        cell_value = worksheet.cell(row=row_idx, column=col_idx).value
+                        if cell_value:
+                            max_length = max(max_length, len(str(cell_value)) + 2)
+                    
+                    # Set the column width (max 50 characters to avoid extremely wide columns)
+                    column_letter = openpyxl.utils.get_column_letter(col_idx)
+                    worksheet.column_dimensions[column_letter].width = min(max_length, 50)
+            
+                # Save the workbook
+                workbook.save(xlsx_file_path)
+                print(f"Saved table as Excel with hyperlinks and auto-adjusted columns: {xlsx_file_path}")
+                return xlsx_file_path
+            else:
+                print(f"Table {card_id} has no data.")
+                return None
 
-              # Save the workbook
-              workbook.save(xlsx_file_path)
-              print(f"Saved table as Excel with hyperlinks: {xlsx_file_path}")
-              return xlsx_file_path
-          else:
-              print(f"Table {card_id} has no data.")
-              return None
-
-      except Exception as e:
-          print(f"Error extracting table data for card {card_id}: {str(e)}")
-          traceback.print_exc()  # Print full traceback for better debugging
-          return None
-      finally:
-          # Reset the viewport back to normal size after extraction
-          await self.page.set_viewport_size(self.normal_viewport)
+        except Exception as e:
+            print(f"Error extracting table data for card {card_id}: {str(e)}")
+            traceback.print_exc()  # Print full traceback for better debugging
+            return None
+        finally:
+            # Reset the viewport back to normal size after extraction
+            await self.page.set_viewport_size(self.normal_viewport)
 
 
     async def extract_dashboard_data(self, dashboard_url, output_dir):
@@ -423,102 +447,150 @@ class MetabaseAgent:
         print("Resources closed")
 
 
-def generate_dashboard_pdf(card_paths, is_table_card, output_pdf_path):
-    """Generate PDF with the original layout but exclude table cards"""
-    c = canvas.Canvas(output_pdf_path, pagesize=landscape(A4))
-    width, height = landscape(A4)
 
+def generate_dashboard_pdf(card_paths, is_table_card, output_pdf_path):
+    """Generate PDF with a simpler layout as requested, including pagination."""
+    # --- First pass: Count pages ---
+    # Filter out table cards
+    non_table_cards = [(i, path) for i, (path, is_table) in enumerate(zip(card_paths, is_table_card)) if not is_table]
+    
     # --- Layout Settings ---
+    width, height = landscape(A4)
     margin = 0.5 * inch
     card_spacing = 0.4 * inch
     page_top_margin = 0.7 * inch
-
+    footer_height = 0.4 * inch  # Space for the footer
+    
+    # Simulate layout to determine total page count
+    def count_total_pages():
+        if not non_table_cards:
+            return 1  # Just one page for "no cards" message
+        
+        # First page has title + up to 3 cards in first row
+        # Each additional page can fit roughly 4 cards (2 rows of 2)
+        remaining_cards = max(0, len(non_table_cards) - 4)
+        cards_per_page = 4
+        additional_pages = (remaining_cards + cards_per_page - 1) // cards_per_page
+        return 1 + additional_pages
+    
+    total_pages = count_total_pages()
+    
+    # --- Second pass: Generate the actual PDF ---
+    c = canvas.Canvas(output_pdf_path, pagesize=landscape(A4))
+    page_num = 1
+    
     # Function to draw page border
     def draw_page_border():
         c.setStrokeColorRGB(0, 0, 0)  # Black color
         c.setLineWidth(2)  # Bold line
         c.rect(margin/2, margin/2, width - margin, height - margin)
-
+    
+    # Function to draw page number with total
+    def draw_page_number():
+        c.setFont("Helvetica", 10)
+        page_text = f"{page_num}/{total_pages}"
+        text_width = c.stringWidth(page_text, "Helvetica", 10)
+        c.drawString(width/2 - text_width/2, margin/2 + footer_height/2, page_text)
+    
     # Function to draw card border
     def draw_card_border(x, y, w, h):
         c.setStrokeColorRGB(0, 0, 0)  # Black color
         c.setLineWidth(1)  # Thinner line for card borders
         c.rect(x, y, w, h)
-
+    
     # Function to start a new page
     def new_page():
+        nonlocal page_num
+        draw_page_number()  # Draw page number on current page before moving to next
         c.showPage()
+        page_num += 1
         draw_page_border()
         return height - page_top_margin
-
+    
+    # Begin actual PDF generation
     # Start first page with border
     draw_page_border()
     y_position = height - page_top_margin
-
-    # Filter out table cards
-    non_table_cards = [(i, path) for i, (path, is_table) in enumerate(zip(card_paths, is_table_card)) if not is_table]
-
+    
     if not non_table_cards:
         c.setFont("Helvetica", 14)
         c.drawString(width/2 - 2*inch, height/2, "No visualization cards to display (tables exported to Excel)")
+        draw_page_number()  # Add page number
         c.save()
         print(f"PDF generated with no cards (tables only): {output_pdf_path}")
         return
-
-    # 1. Title Card (if first card is not a table)
-    if len(card_paths) > 0 and not is_table_card[0]:
-        title_img_path = card_paths[0]
-        if os.path.exists(title_img_path):
-            title_height = 0.8 * inch
-            title_width = width - 2*margin
-
-            c.drawImage(title_img_path, margin, y_position - title_height,
-                        width=title_width, height=title_height)
-            draw_card_border(margin, y_position - title_height, title_width, title_height)
-
-            y_position -= (title_height + card_spacing)
-
-    # 2. Single Metric Card (if second card is not a table)
-    if len(card_paths) > 1 and not is_table_card[1]:
-        metric_img_path = card_paths[1]
-        if os.path.exists(metric_img_path):
-            metric_height = 1.2 * inch
-            metric_width = width - 2*margin
-
-            # Center the metric card
-            c.drawImage(metric_img_path, margin, y_position - metric_height,
-                        width=metric_width, height=metric_height, preserveAspectRatio=True)
-            draw_card_border(margin, y_position - metric_height, metric_width, metric_height)
-
-            y_position -= (metric_height + card_spacing)
-
-    # Check if we need a new page before visualizations
-    if y_position < margin + 4.0 * inch:
-        y_position = new_page()
-
-    # 3. Visualization Cards (3+) - two per row
-    remaining_cards = [(i, path) for i, path in non_table_cards if i >= 2]
-
-    viz_width = (width - 2*margin - card_spacing) / 2
-    viz_height = 3.0 * inch
-
+    
+    # --- Generate the title ---
+    # --- Title and Date ---
+    today_date = datetime.now().strftime("%d %B %Y")  # Example: "06 mai 2025"
+    title = f"Rapport quotidien de suivi des demandes en cours\n{today_date}"
+    
+    # Split the title and date for easier centering
+    title_main, title_date = title.split("\n")
+    
+    # --- Title (Main title + Date) ---
+    # Set font to bold and slightly larger size for both title and date
+    c.setFont("Helvetica-Bold", 18)
+    
+    # Draw the main title (first line)
+    title_width = c.stringWidth(title_main, "Helvetica-Bold", 18)
+    c.drawString(width / 2 - title_width / 2, height - 1 * inch, title_main)
+    
+    # Draw the date (second line) with reduced space
+    date_width = c.stringWidth(title_date, "Helvetica-Bold", 18)
+    c.drawString(width / 2 - date_width / 2, height - 1.3 * inch, title_date)  # Reduced space
+    
+    # --- Adjust position for the next content ---
+    y_position -= 1.0 * inch  # Adjust this value to control the space between the title and visualizations
+    
+    # 2. Next 3 Cards on the same row (if there are enough cards)
+    if len(card_paths) > 1:
+        card_width = (width - 4 * margin) / 3  # Adjusted width for 3 cards
+        card_height = 2 * inch
+        
+        # Draw the first 3 cards on the same row (start at index 1 since the title was removed)
+        for i in range(1, min(4, len(card_paths))):  # Only up to 3 cards (start at index 1)
+            img_path = card_paths[i]
+            if os.path.exists(img_path):
+                x_position = margin + (i - 1) * (card_width + card_spacing)  # Space them out evenly
+                c.drawImage(img_path, x_position, y_position - card_height,
+                            width=card_width, height=card_height)
+                draw_card_border(x_position, y_position - card_height, card_width, card_height)
+        
+        y_position -= (card_height + card_spacing)  # Move down after the row
+    
+    # After placing the 3 cards
+    remaining_cards = non_table_cards[4:]  # Skip the first 4 cards (1 title + 3 in row)
+    
+    card_width = (width - 3 * margin) / 2  # Adjust width for 2 cards per row
+    card_height = 2.5 * inch
+    
     for idx, (orig_idx, img_path) in enumerate(remaining_cards):
         if os.path.exists(img_path):
-            # New page if current one is full
-            if y_position - viz_height < margin + inch:
+            # Calculate if we have space for at least one row (2 cards)
+            if y_position - (card_height + card_spacing) < margin + footer_height:  # Reserve space for footer
                 y_position = new_page()
-
-            x = margin if idx % 2 == 0 else margin + viz_width + card_spacing/2
-            c.drawImage(img_path, x, y_position - viz_height,
-                        width=viz_width, height=viz_height, preserveAspectRatio=True)
-            draw_card_border(x, y_position - viz_height, viz_width, viz_height)
-
-            # Move to next row after every second card
-            if idx % 2 == 1 or (idx == len(remaining_cards) - 1 and idx % 2 == 0):
-                y_position -= (viz_height + card_spacing)
-
+            
+            # Position for 2 cards per row
+            x = margin if idx % 2 == 0 else margin + card_width + card_spacing
+            c.drawImage(img_path, x, y_position - card_height,
+                        width=card_width, height=card_height, preserveAspectRatio=True)
+            draw_card_border(x, y_position - card_height, card_width, card_height)
+            
+            # Move to next row after every second card or if it's the last card in an odd position
+            if idx % 2 == 1:
+                y_position -= (card_height + card_spacing)
+            elif idx == len(remaining_cards) - 1:
+                # If it's the last card and it's alone in the row, move down
+                y_position -= (card_height + card_spacing)
+    
+    # Add page number to the last page
+    draw_page_number()
+    
+    # Save the final PDF
     c.save()
-    print(f"PDF generated with non-table cards only: {output_pdf_path}")
+    print(f"PDF generated with pagination ({total_pages} pages): {output_pdf_path}")
+
 
 def get_email_content(fournisseur_name):
     today_date = datetime.now().strftime('%d/%m/%Y')
