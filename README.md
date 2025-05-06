@@ -1,6 +1,7 @@
 # Create and activate virtual environment (Windows)
 python -m venv venv
-.\venv\Scripts\activate
+
+\venv\Scripts\activate
 
 # Install requirements
 pip install -r requirements.txt
