@@ -8,9 +8,9 @@ pip install -r requirements.txt
 # Install Playwright browsers
 python -m playwright install chromium
 
+# Create a .env File!!
 
 # HOW TO CONFIGURE .env
-
 # Metabase Credentials
 METABASE_URL=https://analytics.example.com       # Your Metabase instance URL
 METABASE_USERNAME=your_email@example.com        # Metabase login email
