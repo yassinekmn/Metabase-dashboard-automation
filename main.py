@@ -318,7 +318,8 @@ class MetabaseAgent:
                     
                     # Set the column width (max 50 characters to avoid extremely wide columns)
                     column_letter = openpyxl.utils.get_column_letter(col_idx)
-                    worksheet.column_dimensions[column_letter].width = min(max_length, 50)
+                    adjusted_width = (max_length + 2) * 1.2
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
             
                 # Save the workbook
                 workbook.save(xlsx_file_path)
