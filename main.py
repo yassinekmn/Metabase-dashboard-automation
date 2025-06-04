@@ -545,6 +545,7 @@ def generate_dashboard_pdf(card_paths, is_table_card, output_pdf_path):
     
     # --- Generate the title ---
     # --- Title and Date ---
+    locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
     today_date = datetime.now().strftime("%d %B %Y")  # Example: "06 mai 2025"
     title = f"Rapport quotidien de suivi des demandes en cours\n{today_date}"
     
@@ -765,16 +766,16 @@ async def run_all_dashboards():
                 'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
             }
         },
-         {
-            'name': 'SOMEM',
-            'url': f"{METABASE_URL}/dashboard/10-fournisseur-somem?",
-            'email': {
-                **EMAIL_BASE_CONFIG,
-                'recipients': os.getenv('RECIPIENTS').split(','),
-                'subject': f"Fournisseur - SOMEM ",
-                'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
-            }
-         },
+        #  {
+        #     'name': 'SOMEM',
+        #     'url': f"{METABASE_URL}/dashboard/10-fournisseur-somem?",
+        #     'email': {
+        #         **EMAIL_BASE_CONFIG,
+        #         'recipients': os.getenv('RECIPIENTS').split(','),
+        #         'subject': f"Fournisseur - SOMEM ",
+        #         'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
+        #     }
+        #  },
         # {
         #     'name': 'PROCLIM',
         #     'url': f"{METABASE_URL}/dashboard/4-fournisseur-proclim",
