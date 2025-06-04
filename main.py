@@ -47,7 +47,7 @@ class MetabaseAgent:
 
         # Define normal and large viewport sizes
         self.normal_viewport = {'width': 1280, 'height': 800}  # Normal viewport size
-        self.large_viewport = {'width': 50000, 'height': 10000}  # Larger viewport for table extraction
+        self.large_viewport = {'width': 50000, 'height': 50000}  # Larger viewport for table extraction
 
     async def initialize(self):
         """Initialize Playwright"""
@@ -91,7 +91,30 @@ class MetabaseAgent:
             print("Saved login failure screenshot")
             return False
 
-    async def wait_for_dashboard_to_load(self, timeout=120000):
+
+    async def wait_until_table_fully_loaded(self, timeout=120, check_interval=1):
+        
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            page_title = await self.page.title()
+            # If not loading anymore
+            if not re.search(r'\d+/\d+\s+loaded', page_title):
+                # But make sure the table is actually visible
+                table_exists = await self.page.evaluate('''() => {
+                    const table = document.querySelector("table");
+                    return table && table.querySelectorAll("tr").length > 0;
+                }''')
+                if table_exists:
+                    print("✅ Table fully loaded and visible.")
+                    return True
+            print(f"⏳ Still loading: {page_title}")
+            await self.page.wait_for_timeout(check_interval * 1000)
+
+        raise TimeoutError("Timed out waiting for table to fully load.")
+
+
+    async def wait_for_dashboard_to_load(self, timeout=180000):
         """Wait for dashboard to fully load by monitoring the title tag changes"""
         try:
             print("Waiting for dashboard to fully load using title monitoring...")
@@ -132,7 +155,7 @@ class MetabaseAgent:
         try:
             # Before extracting data, set the larger viewport
             await self.page.set_viewport_size(self.large_viewport)
-
+          
             # Try to extract the card title
             card_title = await self.page.evaluate('''(card) => {
                 const titleEl = card.querySelector('[data-testid="legend-caption-title"]');
@@ -144,8 +167,7 @@ class MetabaseAgent:
                                     card.querySelector('.dashcard-title');
                 return altTitleEl ? altTitleEl.textContent.trim() : null;
             }''', card)
-            await self.page.wait_for_timeout(3000)
-
+            
             # Fallback title if not found
             title = card_title if card_title else f"table_{card_id}"
             safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
@@ -155,7 +177,7 @@ class MetabaseAgent:
 
             total_pages = 0  # Total number of pages processed
             current_page = 1  # Start with the first page
-
+            
             # Start paginating through the table
             while True:
                 print(f"--- Processing page {current_page} ---")
@@ -224,7 +246,7 @@ class MetabaseAgent:
                 if next_button:
                     await next_button.click()
                     print(f"Clicked next page, waiting for table to update...")
-                    await self.page.wait_for_timeout(10000)  # Wait for new data to load
+                    await self.page.wait_for_timeout(1000)  # Wait for new data to load
                     current_page += 1
                 else:
                     print("Next button not found or disabled. Ending extraction.")
@@ -346,11 +368,11 @@ class MetabaseAgent:
           # Navigate to dashboard
           print(f"Navigating to dashboard URL: {dashboard_url}")
           await self.page.goto(dashboard_url)
-
+          await self.wait_until_table_fully_loaded()
           # Wait for the dashboard to load
           print("Waiting for dashboard grid")
-          await self.page.wait_for_selector('[data-testid="dashboard-grid"]', timeout=30000)
-          print("Dashboard grid loaded")
+        #   await self.page.wait_for_selector('[data-testid="dashboard-grid"]', timeout=30000)
+        #   print("Dashboard grid loaded")
 
           # Add a longer wait to ensure all data loads
           print("Waiting for data to fully load...")
@@ -661,67 +683,52 @@ def send_report_email(pdf_path, xlsx_files, recipients, subject, fournisseur_nam
     except Exception as e:
         print(f"Failed to send email: {str(e)}")
         return False
-
-async def process_dashboard(metabase_url, username, password, dashboard_url, dashboard_name, output_dir, email_config):
+    
+async def process_dashboard(agent, dashboard_url, dashboard_name, output_dir, email_config):
     """Process a single dashboard and send its report via email"""
-
-    # Create a specific output directory for this dashboard
     dashboard_output_dir = os.path.join(output_dir, dashboard_name)
     os.makedirs(dashboard_output_dir, exist_ok=True)
 
-    # Run the agent for this dashboard
-    agent = MetabaseAgent(metabase_url, username, password)
     try:
-        print(f"Initializing agent for {dashboard_name}")
-        await agent.initialize()
+        print(f"Extracting data for {dashboard_name}")
+        card_paths, is_table_card = await agent.extract_dashboard_data(dashboard_url, dashboard_output_dir)
 
-        print(f"Logging in for {dashboard_name}")
-        login_success = await agent.login()
+        # Generate PDF from extracted data (excluding tables)
+        print(f"Generating PDF for {dashboard_name}...")
+        pdf_output_path = os.path.join(dashboard_output_dir, f"{dashboard_name}_report.pdf")
+        generate_dashboard_pdf(card_paths, is_table_card, pdf_output_path)
+        print(f"Dashboard PDF created at: {pdf_output_path}")
 
-        if login_success:
-            print(f"Login successful, extracting data for {dashboard_name}")
-            card_paths, is_table_card = await agent.extract_dashboard_data(dashboard_url, dashboard_output_dir)
+        # Find all Excel files generated for this dashboard
+        xlsx_files = glob.glob(os.path.join(dashboard_output_dir, "*.xlsx"))
+        print(f"Found {len(xlsx_files)} Excel files for {dashboard_name}")
 
-            # Generate PDF from extracted data (excluding tables)
-            print(f"Generating PDF for {dashboard_name}...")
-            pdf_output_path = os.path.join(dashboard_output_dir, f"{dashboard_name}_report.pdf")
-            generate_dashboard_pdf(card_paths, is_table_card, pdf_output_path)
-            print(f"Dashboard PDF created at: {pdf_output_path}")
+        # Send email with the generated files
+        print(f"Sending email for {dashboard_name}...")
+        today_date = datetime.now().strftime('%d/%m/%Y')
+        subject = f"RAPPORT - {dashboard_name} ({today_date})"
+        body = f"Veuillez trouver le rapport quotidien du {today_date}."
 
-            # Find all Excel files generated for this dashboard
-            xlsx_files = glob.glob(os.path.join(dashboard_output_dir, "*.xlsx"))
-            print(f"Found {len(xlsx_files)} Excel files for {dashboard_name}")
+        email_sent = send_report_email(
+            pdf_path=pdf_output_path,
+            xlsx_files=xlsx_files,
+            recipients=email_config['recipients'],
+            subject=subject,
+            fournisseur_name=dashboard_name,
+            body=body,
+            smtp_server=email_config['smtp_server'],
+            smtp_port=email_config['smtp_port'],
+            sender_email=email_config['sender_email'],
+            sender_password=email_config['sender_password']
+        )
 
-            # Send email with the generated files
-            print(f"Sending email for {dashboard_name}...")
-            today_date = datetime.now().strftime('%d/%m/%Y')
-            subject = f"RAPPORT - {dashboard_name} ({today_date})"
-            body = f"Veuillez trouver le rapport quotidien du {today_date}."
-
-            email_sent = send_report_email(
-                pdf_path=pdf_output_path,
-                xlsx_files=xlsx_files,
-                recipients=email_config['recipients'],
-                subject=subject,
-                fournisseur_name=dashboard_name,  # Pass the dashboard_name as fournisseur_name
-                body=body,
-                smtp_server=email_config['smtp_server'],
-                smtp_port=email_config['smtp_port'],
-                sender_email=email_config['sender_email'],
-                sender_password=email_config['sender_password']
-            )
-
-            if email_sent:
-                print(f"Email sent successfully for {dashboard_name}")
-            else:
-                print(f"Failed to send email for {dashboard_name}")
-
+        if email_sent:
+            print(f"Email sent successfully for {dashboard_name}")
         else:
-            print(f"Login failed for {dashboard_name}, cannot extract dashboard data")
+            print(f"Failed to send email for {dashboard_name}")
+
     except Exception as e:
         print(f"Error processing {dashboard_name}: {str(e)}")
-    finally:
-        await agent.close()
 
 
 
@@ -730,15 +737,13 @@ async def process_dashboard(metabase_url, username, password, dashboard_url, das
 load_dotenv()
 
 async def run_all_dashboards():
-    """Process all three dashboards"""
 
-    # Common configuration from environment variables
     METABASE_URL = os.getenv('METABASE_URL')
     USERNAME = os.getenv('METABASE_USERNAME')
     PASSWORD = os.getenv('METABASE_PASSWORD')
     BASE_OUTPUT_DIR = "dashboard_exports"
 
-    # Email configuration from environment variables
+
     EMAIL_BASE_CONFIG = {
         'smtp_server': os.getenv('SMTP_SERVER'),
         'smtp_port': int(os.getenv('SMTP_PORT')),
@@ -760,40 +765,61 @@ async def run_all_dashboards():
                 'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
             }
         },
-        {
-            'name': 'PROCLIM',
-            'url': f"{METABASE_URL}/dashboard/4-fournisseur-proclim",
+         {
+            'name': 'SOMEM',
+            'url': f"{METABASE_URL}/dashboard/10-fournisseur-somem?",
             'email': {
                 **EMAIL_BASE_CONFIG,
                 'recipients': os.getenv('RECIPIENTS').split(','),
-                'subject': f"Fournisseur - PROCLIM",
+                'subject': f"Fournisseur - SOMEM ",
                 'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
             }
-        },
-        {
-            'name': 'SONOTRAB',
-            'url': f"{METABASE_URL}/dashboard/3-fournisseur-sonotrab",
-            'email': {
-                **EMAIL_BASE_CONFIG,
-                'recipients': os.getenv('RECIPIENTS').split(','),
-                'subject': f"Fournisseur - SONOTRAB",
-                'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
-            }
-        }
+         },
+        # {
+        #     'name': 'PROCLIM',
+        #     'url': f"{METABASE_URL}/dashboard/4-fournisseur-proclim",
+        #     'email': {
+        #         **EMAIL_BASE_CONFIG,
+        #         'recipients': os.getenv('RECIPIENTS').split(','),
+        #         'subject': f"Fournisseur - PROCLIM",
+        #         'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
+        #     }
+        # },
+        # {
+        #     'name': 'SONOTRAB',
+        #     'url': f"{METABASE_URL}/dashboard/3-fournisseur-sonotrab",
+        #     'email': {
+        #         **EMAIL_BASE_CONFIG,
+        #         'recipients': os.getenv('RECIPIENTS').split(','),
+        #         'subject': f"Fournisseur - SONOTRAB",
+        #         'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
+        #     }
+        # }
     ]
 
-    # Process each dashboard
+   # Create and initialize agent only once
+    agent = MetabaseAgent(METABASE_URL, USERNAME, PASSWORD)
+    await agent.initialize()
+    login_success = await agent.login()
+
+    if not login_success:
+        print("Login failed, aborting all dashboards")
+        await agent.close()
+        return
+
+    # Process all dashboards using the same logged-in agent
     for dashboard in dashboards:
         print(f"\n--- Processing dashboard: {dashboard['name']} ---\n")
         await process_dashboard(
-            metabase_url=METABASE_URL,
-            username=USERNAME,
-            password=PASSWORD,
+            agent=agent,
             dashboard_url=dashboard['url'],
             dashboard_name=dashboard['name'],
             output_dir=BASE_OUTPUT_DIR,
             email_config=dashboard['email']
         )
+
+    # Close agent after all dashboards processed
+    await agent.close()
 
 import nest_asyncio
 nest_asyncio.apply()
