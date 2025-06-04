@@ -766,36 +766,36 @@ async def run_all_dashboards():
                 'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
             }
         },
-        #  {
-        #     'name': 'SOMEM',
-        #     'url': f"{METABASE_URL}/dashboard/10-fournisseur-somem?",
-        #     'email': {
-        #         **EMAIL_BASE_CONFIG,
-        #         'recipients': os.getenv('RECIPIENTS').split(','),
-        #         'subject': f"Fournisseur - SOMEM ",
-        #         'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
-        #     }
-        #  },
-        # {
-        #     'name': 'PROCLIM',
-        #     'url': f"{METABASE_URL}/dashboard/4-fournisseur-proclim",
-        #     'email': {
-        #         **EMAIL_BASE_CONFIG,
-        #         'recipients': os.getenv('RECIPIENTS').split(','),
-        #         'subject': f"Fournisseur - PROCLIM",
-        #         'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
-        #     }
-        # },
-        # {
-        #     'name': 'SONOTRAB',
-        #     'url': f"{METABASE_URL}/dashboard/3-fournisseur-sonotrab",
-        #     'email': {
-        #         **EMAIL_BASE_CONFIG,
-        #         'recipients': os.getenv('RECIPIENTS').split(','),
-        #         'subject': f"Fournisseur - SONOTRAB",
-        #         'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
-        #     }
-        # }
+         {
+            'name': 'SOMEM',
+            'url': f"{METABASE_URL}/dashboard/10-fournisseur-somem?",
+            'email': {
+                **EMAIL_BASE_CONFIG,
+                'recipients': os.getenv('RECIPIENTS').split(','),
+                'subject': f"Fournisseur - SOMEM ",
+                'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
+            }
+         },
+        {
+            'name': 'PROCLIM',
+            'url': f"{METABASE_URL}/dashboard/4-fournisseur-proclim",
+            'email': {
+                **EMAIL_BASE_CONFIG,
+                'recipients': os.getenv('RECIPIENTS').split(','),
+                'subject': f"Fournisseur - PROCLIM",
+                'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
+            }
+        },
+        {
+            'name': 'SONOTRAB',
+            'url': f"{METABASE_URL}/dashboard/3-fournisseur-sonotrab",
+            'email': {
+                **EMAIL_BASE_CONFIG,
+                'recipients': os.getenv('RECIPIENTS').split(','),
+                'subject': f"Fournisseur - SONOTRAB",
+                'body': f'Veuillez trouver le rapport quotidien du {today_date}.'
+            }
+        }
     ]
 
    # Create and initialize agent only once
